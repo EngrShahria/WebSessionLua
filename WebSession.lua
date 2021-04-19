@@ -25,7 +25,7 @@ local WebSession = object:extend();
   Things you may need.
   User, isAuth, setAuth, setSessionTime
 ]]
-
+locla reqSession = {}
 function WebSession:initialize(req, res, options)
 
     --SETUP THE OPTIONS 
@@ -37,10 +37,10 @@ function WebSession:initialize(req, res, options)
     local sid = digest(options.hash, RandomString(options.length))
 
     --Initialize the server-side session;
-    req.session = {}
-    req.session[sid] = {}
-    req.session[sid].user = options.name
-    req.session[sid].isAuth = true
+    
+    reqSession[sid] = {}
+    reqSession[sid].user = options.name
+    reqSession[sid].isAuth = true
     --Initialize the Response Cookie;
 
     res.setCookie("sID", sid);
@@ -71,10 +71,8 @@ end
 function WebSession:destroy(req, res)
   
   local sid = req.cookies.sID
-  req.session = {}
-  req.session[sid] = {}
-  req.session[sid].user = nil
-  req.session[sid].isAuth = false
+  req.session[sid] = nil
+ 
 
   self.SessionID = nil
   self.Auth = nil
