@@ -1,8 +1,6 @@
 --[[
   For using this Module, you need weblit-cookies.lua
   It can be found here [ https://github.com/creationix/weblit/blob/master/libs/weblit-cookie.lua ]
-
-  Usage: 
 ]]
 
 local digest = require("openssl").digest.digest
@@ -25,59 +23,107 @@ local WebSession = object:extend();
   Things you may need.
   User, isAuth, setAuth, setSessionTime
 ]]
-locla reqSession = {}
+
+math.randomseed(os.time() ^ 5)
+local RandomString = function(length)
+	local str = ""
+	for i = 1, length do
+		str = str .. string.char(math.random(97, 122))
+	end
+	return str
+end
+
+local ServerSession = {}
+
 function WebSession:initialize(req, res, options)
 
+    
     --SETUP THE OPTIONS 
     local options = options or {}
-    if options.name == nil then return false end
-    options.hash = options.hash or "md5WithRSAEncryption"
-    options.length = options.length or 5
+    if options.UserName == nil then return false end
+    options.hash = "sha384"
+    options.cName = options.cName or "ThisisCookie"
+    options.length = options.length or 11
+    options.secret = options.secret or "ThisIsSecretCode"
+    ---
 
-    local sid = digest(options.hash, RandomString(options.length))
+    local cName = digest("md5", options.cName);
+    local SID = digest(options.hash, RandomString(options.length))
+    
+    --Set property based on every unique Object ID;
+    self.SessionID = SID
+    self.cName = cName
+    self.Auth = true
+    self.User = options.UserName
+    self.Agent = digest(options.hash, req.headers["user-agent"])
+    self.GenCode = digest("MD5", options.secret)
+
+    
 
     --Initialize the server-side session;
-    
-    reqSession[sid] = {}
-    reqSession[sid].user = options.name
-    reqSession[sid].isAuth = true
+    ServerSession = {}
+    ServerSession[SID] = {}
+    ServerSession[SID].UserName = self.User
+    ServerSession[SID].isAuth = self.Auth
+    ServerSession[SID].Agent = digest(options.hash, req.headers["user-agent"])
+    ServerSession[SID].Protected = self.Agent .."/".. self.SessionID .. "=" .. self.GenCode 
+
     --Initialize the Response Cookie;
-
-    res.setCookie("sID", sid);
-
-    --Set property based on every unique Object ID;
-    self.SessionID = sid;
-    self.Auth = true
-    self.User = req.session[sid].user
+    res.setCookie(cName, SID);
 
 end
 
-function WebSession:getID()
-  return self.SessionID
+
+--Other Methods;
+
+function WebSession:isAuth(req) -- Check the person is has Auth Permission or
+  local agent = digest("sha384", req.headers["user-agent"])
+  local Protection = agent.."+"..self.SessionID .. "&".. self.GenCode
+  local CodeName = req.cookies[self.cName]
+  if ServerSession[CodeName].Protected == Protection then
+    if self.Agent == ServerSession[CodeName].Agent then 
+      if self.Auth == ServerSession[CodeName].isAuth then
+      return true end
+    end
+  end
+  return false
 end
 
-function WebSession:setAuth(bool)
+function WebSession:setAuth(bool) --Need to rework
   if bool ~= true or bool ~= false then return false end
   self.Auth = bool
   return true
 end
 
-function WebSession:isAuth(req)
-  if self.Auth == req.session[req.cookies.sID].isAuth then
-    return true end
-  return false
+function WebSession:getUser(req)
+  if self.User == ServerSession[req.cookies[self.cName]].UserName then
+    return self.User end
+  return nil
+end
+
+function WebSession:getID() 
+  return self.SessionID
 end
 
 function WebSession:destroy(req, res)
-  
-  local sid = req.cookies.sID
-  req.session[sid] = nil
- 
+  local id = self.SessionID
 
+ --Initialize the server-side session;
+  ServerSession[id].UserName = nil
+  ServerSession[id].isAuth = false
+  ServerSession[id] = nil
+  ServerSession = nil
+
+  --Initialize the Response Cookie;
+  res.clearCookie(self.cName);
+
+  --Set property based on every unique Object ID;
+  self.cName = nil
   self.SessionID = nil
-  self.Auth = nil
-  
-  res.clearCookie("sID")
+  self.Auth = false
+  self.User = nil
+  return true
 end
+
 
 return WebSession
